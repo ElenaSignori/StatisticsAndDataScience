@@ -1,0 +1,427 @@
+---
+title: "Modeling - Seoul Bike Sharing Data"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Istruzioni: lanciare tutti i code chunks con Ctrl+Alt+R in modo da evitare di lanciare i codici che stimano i modelli (i modelli sono già stati salvati nella cartella models)
+
+Carico pacchetti:
+
+```{r include=FALSE}
+library(ranger)
+library(readr)
+library(dplyr)
+library(rsample)
+library(caret)
+library(keras)
+
+source("utils/vimp_plot.R")
+
+theme_set(theme_minimal())
+```
+
+Carico dati:
+
+```{r include=FALSE}
+bike_train <- read_csv("data/bike_train.csv")
+bike_train_dummy <- read_csv("data/bike_train_dummy.csv")
+
+bike_valid <- read_csv("data/bike_valid.csv")
+bike_valid_dummy <- read_csv("data/bike_valid_dummy.csv")
+
+bike_test <- read_csv("data/bike_test.csv")
+bike_test_dummy <- read_csv("data/bike_test_dummy.csv")
+```
+
+# Modelli "all features"
+
+### Random forest 1
+
+Random forest stimata per feature selection iniziale
+
+Codice per stima modello (non necessario eseguire)
+
+```{r eval=FALSE, include=FALSE}
+n_features <- length(bike_train)
+
+bike_rf1 <- ranger(
+  rented_bike_count ~ ., 
+  data = bike_train,
+  mtry = floor(n_features / 3),
+  importance = "impurity",
+  respect.unordered.factors = "order",
+)
+```
+
+Save/Load model:
+
+```{r}
+bike_rf1 <- readRDS("models/bike_rf1.rda")
+```
+
+#### RMSE
+
+```{r}
+paste("Validation RMSE: ", RMSE(round(predict(bike_rf1, bike_train)$predictions), bike_train$rented_bike_count))
+
+paste("Validation RMSE: ", RMSE(round(predict(bike_rf1, bike_valid)$predictions), bike_valid$rented_bike_count))
+
+paste("Testing RMSE: ", RMSE(round(predict(bike_rf1, bike_test)$predictions), bike_test$rented_bike_count))
+```
+
+### Regressione lineare
+
+Stima modello:
+
+```{r}
+lm1 <- lm(rented_bike_count ~ ., bike_train_dummy)
+```
+
+Riassunto modello:
+
+```{r}
+summary(lm1) 
+```
+
+Investighiamo le variabili per cui i coefficienti stimati della regressione lineare sono NA
+
+### Random forest dummy default
+
+Modello applicato a dati con variabili dummy.
+
+(Modello di default senza hyperparameter tuning)
+
+```{r eval=FALSE, include=FALSE}
+n_features <- length(bike_train_dummy)
+
+bike_dummy_rf <- ranger(
+  rented_bike_count ~ ., 
+  data = bike_train_dummy,
+  mtry = floor(n_features / 3),
+  importance = "impurity",
+  respect.unordered.factors = "order",
+)
+```
+
+Save/Load model:
+
+```{r}
+bike_dummy_rf <- readRDS("models/bike_dummy_rf.rda")
+```
+
+
+#### RMSE
+
+```{r}
+default_train_rmse <- RMSE(round(predict(bike_dummy_rf, bike_train_dummy)$predictions),
+                           bike_train_dummy$rented_bike_count)
+default_valid_rmse <- 
+  RMSE(round(predict(bike_dummy_rf, 
+                     bike_valid_dummy)$predictions),
+                           bike_valid_dummy$rented_bike_count)
+default_test_rmse <- 
+  RMSE(round(predict(bike_dummy_rf, bike_test_dummy)$predictions),
+                           bike_test_dummy$rented_bike_count)
+
+
+paste("Training RMSE:", default_train_rmse)
+paste("Validation RMSE: ", default_valid_rmse)
+paste("Testing RMSE: ", default_test_rmse)
+```
+
+### Regressione lineare 2
+
+Regressione lineare stimata escludendo le variabili che danno coefficienti stimati NA
+
+Creiamo nuovo dataframe per training e test set:
+
+```{r}
+bike_train_dummy2 <- bike_train_dummy %>% 
+  select(-names(which(is.na(lm1$coefficients)))) 
+
+bike_valid_dummy2 <- bike_valid_dummy %>% 
+  select(-names(which(is.na(lm1$coefficients)))) 
+
+bike_test_dummy2 <- bike_test_dummy %>% 
+  select(-names(which(is.na(lm1$coefficients)))) 
+```
+
+Stima regressione lineare:
+
+```{r}
+lm2 <- lm(rented_bike_count ~ ., bike_train_dummy2)
+```
+
+Riassunto modello:
+
+```{r}
+summary(lm2)
+```
+
+#### RMSE
+
+
+```{r}
+paste("Training RMSE: ", RMSE(round(predict(lm2, bike_train_dummy2)), bike_train_dummy2$rented_bike_count))
+
+paste("Validation RMSE: ", RMSE(round(predict(lm2, bike_valid_dummy2)), bike_valid_dummy2$rented_bike_count))
+
+paste("Testing RMSE: ", RMSE(round(predict(lm2, bike_test_dummy2)), bike_test_dummy2$rented_bike_count))
+```
+
+
+### Random forest 4
+
+#### Hyperparameter tuning
+
+```{r eval=FALSE}
+n_features <- length(bike_train_dummy) - 1
+
+hyper_grid <- expand.grid(
+  num.trees = c(100, n_features * 10, 500),
+  mtry = floor(n_features * c(.05, .15, .25, .333, .4)),
+  min.node.size = c(1, 3, 5, 10), 
+  replace = c(TRUE, FALSE),                               
+  sample.fraction = c(.5, .63, .8),                       
+  train_rmse = NA,
+  valid_rmse = NA
+)
+
+# execute full cartesian grid search
+for(i in seq_len(nrow(hyper_grid))) {
+  # fit model for ith hyperparameter combination
+  fit <- ranger(
+    formula         = rented_bike_count ~ ., 
+    data            = bike_train_dummy, 
+    num.trees       = hyper_grid$num.trees[i],
+    mtry            = hyper_grid$mtry[i],
+    min.node.size   = hyper_grid$min.node.size[i],
+    replace         = hyper_grid$replace[i],
+    sample.fraction = hyper_grid$sample.fraction[i],
+    verbose         = FALSE,
+    respect.unordered.factors = 'order'
+  )
+  # export OOB error 
+  hyper_grid$train_rmse[i] <- sqrt(fit$prediction.error)
+  
+  pred <- round(predict(fit, bike_valid_dummy)$predictions)
+  
+  hyper_grid$valid_rmse[i] <- RMSE(pred, bike_valid_dummy$rented_bike_count)
+}
+```
+
+Carica hyperparameter grid da csv:
+
+```{r}
+hyper_grid <- read_csv("models/rf_hyper_grid.csv")[-1]
+
+# assess top 10 models
+hyper_grid %>%
+  arrange(valid_rmse) %>%
+  mutate(
+    train_perc_gain = (default_train_rmse - train_rmse) / 
+      default_train_rmse * 100,
+    valid_perc_gain = (default_valid_rmse - valid_rmse) / 
+      default_valid_rmse * 100) %>%
+  head(10)
+```
+
+#### Fit
+
+Fittiamo modello con gli iperparametri del modello migliore:
+
+```{r eval = FALSE}
+bike_rf4 <- ranger(
+  formula         = rented_bike_count ~ ., 
+  data            = bike_train_dummy, 
+  num.trees       = 500,
+  mtry            = 12,
+  min.node.size   = 1,
+  replace         = FALSE,
+  sample.fraction = 0.80,
+  verbose         = FALSE,
+  respect.unordered.factors = 'order',
+)
+```
+
+Carico modello già stimato:
+
+```{r}
+bike_rf4 <- readRDS("models/bike_rf4.rda")
+```
+
+#### RMSE
+
+```{r}
+paste("Training RMSE: ", RMSE(round(predict(bike_rf4, bike_train_dummy)$predictions), bike_train_dummy$rented_bike_count))
+
+paste("Validation RMSE: ", RMSE(round(predict(bike_rf4, bike_valid_dummy)$predictions), bike_valid_dummy$rented_bike_count))
+
+paste("Testing RMSE: ", RMSE(round(predict(bike_rf4, bike_test_dummy)$predictions), bike_test_dummy$rented_bike_count))
+```
+
+
+
+### Multilayer Perceptron
+
+Vedi file "bike_MLP_nb.ipynb"
+
+Carichiamo modello stimato:
+
+```{r include = FALSE}
+bike_mlp3 <- load_model_hdf5("models/bike_mlp3.h5")
+```
+
+Summary del modello:
+
+```{r}
+summary(bike_mlp3)
+```
+
+Performance su validation set: RMSE = 171.2723
+
+# Modelli "selected features"
+
+### Regressione Lineare 3
+
+Stimiamo ora un modello di regressione cosiderando solo alcune delle variabili più importanti individuate attraverso l'importance plot (8 variabili):
+
+```{r}
+# no dew_point_temperature per correlazione con temperature
+lm3 <- lm(rented_bike_count ~ hour + temperature + humidity + functioning_day_Yes + seasons_Winter + solar_radiation+rainfall, bike_train_dummy2) 
+```
+
+
+#### RMSE
+
+
+```{r}
+paste("Training RMSE: ", RMSE(round(predict(lm3, bike_train_dummy2)), bike_train_dummy2$rented_bike_count))
+
+paste("Validation RMSE: ", RMSE(round(predict(lm3, bike_valid_dummy2)), bike_valid_dummy2$rented_bike_count))
+
+paste("Testing RMSE: ", RMSE(round(predict(lm3, bike_test_dummy2)), bike_test_dummy2$rented_bike_count))
+```
+
+
+### Random forest 5
+
+#### Hyperparameter tuning
+
+```{r eval=FALSE}
+n_features <- 8
+
+hyper_grid <- expand.grid(
+  num.trees = c(100, n_features * 10, 500),
+  mtry = floor(n_features * c(.05, .15, .25, .333, .4)),
+  min.node.size = c(1, 3, 5, 10), 
+  replace = c(TRUE, FALSE),                               
+  sample.fraction = c(.5, .63, .8),                       
+  train_rmse = NA,
+  valid_rmse = NA
+)
+
+# execute full cartesian grid search
+for(i in seq_len(nrow(hyper_grid))) {
+  # fit model for ith hyperparameter combination
+  fit <- ranger(
+    formula = rented_bike_count ~ hour+temperature+humidity+functioning_day_Yes+seasons_Winter+
+            dew_point_temperature+solar_radiation+rainfall, 
+    data            = bike_train_dummy, 
+    num.trees       = hyper_grid$num.trees[i],
+    mtry            = hyper_grid$mtry[i],
+    min.node.size   = hyper_grid$min.node.size[i],
+    replace         = hyper_grid$replace[i],
+    sample.fraction = hyper_grid$sample.fraction[i],
+    verbose         = FALSE,
+    respect.unordered.factors = 'order'
+  )
+  # export OOB error 
+  hyper_grid$train_rmse[i] <- sqrt(fit$prediction.error)
+  
+  pred <- round(predict(fit, bike_valid_dummy)$predictions)
+  
+  hyper_grid$valid_rmse[i] <- RMSE(pred, bike_valid_dummy$rented_bike_count)
+}
+```
+
+
+Carica hyperparameter grid da csv:
+
+```{r}
+hyper_grid2 <- read_csv("models/rf_hyper_grid2.csv")
+
+# assess top 10 models
+hyper_grid2 %>%
+  arrange(valid_rmse) %>%
+  mutate(
+    train_perc_gain = (default_train_rmse - train_rmse) / 
+      default_train_rmse * 100,
+    valid_perc_gain = (default_valid_rmse - valid_rmse) / 
+      default_valid_rmse * 100) %>%
+  head(10)
+```
+
+Stimo il modello migliore:
+
+```{r eval=FALSE}
+bike_rf5 <- ranger(
+    formula = rented_bike_count ~ hour+temperature+humidity+functioning_day_Yes+seasons_Winter+
+            dew_point_temperature+solar_radiation+rainfall, 
+    data            = bike_train_dummy, 
+    num.trees       = 500,
+    mtry            = 3,
+    min.node.size   = 1,
+    replace         = FALSE,
+    sample.fraction = 0.63,
+    verbose         = FALSE,
+    respect.unordered.factors = 'order'
+  )
+```
+
+
+Save/Load model:
+```{r}
+# saveRDS(bike_rf5, "models/bike_rf5.rda")
+
+bike_rf5 <- readRDS("models/bike_rf5.rda")
+```
+
+
+#### RMSE
+
+```{r}
+paste("Training RMSE: ", RMSE(round(predict(bike_rf5, bike_train_dummy)$predictions), bike_train_dummy$rented_bike_count))
+
+paste("Validation RMSE: ", RMSE(round(predict(bike_rf5, bike_valid_dummy)$predictions), bike_valid_dummy$rented_bike_count))
+
+paste("Testing RMSE: ", RMSE(round(predict(bike_rf5, bike_test_dummy)$predictions), bike_test_dummy$rented_bike_count))
+```
+
+
+### MLP
+
+```{r include = FALSE}
+bike_mlp3 <- load_model_hdf5("models/bike_mlp3.h5")
+```
+
+Summary del modello:
+
+```{r}
+summary(bike_mlp3)
+```
+
+
+### MLP
+
+```{r include = FALSE}
+bike_mlp4 <- load_model_hdf5("models/bike_mlp4.h5")
+```
+
+Summary del modello:
+
+```{r}
+summary(bike_mlp4)
+```

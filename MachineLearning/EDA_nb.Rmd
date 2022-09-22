@@ -1,0 +1,132 @@
+---
+title: "Exploratory Data Analysis - Seoul Bike Sharing Data"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Carichiamo i pacchetti necessari:
+```{r include=FALSE}
+library(readr)
+library(corrplot)
+library(tidyverse)
+library(ranger)
+
+source("utils/vimp_plot.R")
+
+# Imposta tema grafico
+theme_set(theme_minimal())
+```
+
+Carichiamo i dati:
+```{r include=FALSE}
+bike_train <- read_csv("data/bike_train.csv")
+```
+
+
+Andiamo ad analizzare i dati in modo da identificarne delle proprietà utili alla previsione del numero di bici affittate ogni ora. 
+
+## Descrizione del dataset
+
+```{r}
+bike_train %>% 
+  ggplot() +
+  geom_histogram(aes(rented_bike_count)) +
+  xlab("# rented bikes")
+```
+
+
+## Feature selection
+
+#### Correlazione lineare
+
+```{r}
+corrplot(cor(bike_train[, 1:10]), method = "color", type = "full",
+         addCoef.col = 1, tl.col = 1, number.cex = 0.6)
+```
+
+
+#### Random forest
+```{r}
+##### Random forest #####
+bike_rf1 <- readRDS("models/bike_rf1.rda")
+```
+
+Importance plot:
+```{r}
+vimp_plot(bike_rf1) +
+  xlab("features")
+```
+
+
+#### Random forest 2
+
+Random forest applicata sui dati con i le variabili categoriche trasformate in dummy:
+
+```{r}
+bike_train_dummy <- read_csv("data/bike_train_dummy.csv")
+bike_dummy_rf <- readRDS("models/bike_dummy_rf.rda")
+```
+
+Importance plot:
+```{r}
+vimp_plot(bike_dummy_rf) + 
+  xlab("features")
+```
+
+
+Facciamo i grafici in base all'importanza delle variabili trovata dalla random forest
+
+##### Plot 1 - media rented_bike_count raggruppato per hour, season
+```{r}
+bike_train %>% 
+  group_by(hour, seasons) %>% 
+  summarize(
+    mean_rented_bike_count = mean(rented_bike_count)
+  ) %>% 
+  ggplot(aes(hour, mean_rented_bike_count, group = seasons, color = seasons)) +
+  geom_line() +
+  geom_point() +
+  ylab("mean # rented bikes")
+```
+
+##### Plot 2 - media rented_bike_count raggruppato per hour, month
+```{r}
+bike_train %>% 
+  group_by(hour, month) %>% 
+  summarize(
+    mean_rented_bike_count = mean(rented_bike_count)
+  ) %>% 
+  ggplot(aes(hour, mean_rented_bike_count, group = month, color = month)) +
+  geom_line() +
+  geom_point() +
+  ylab("mean # rented bikes")
+```
+
+
+##### Plot 3 - distribuzione di rented_bike_count in base alla temperatura
+
+Colora per stagione: 
+
+```{r}
+bike_train %>%
+  ggplot() +
+  geom_col(aes(temperature, rented_bike_count, fill = seasons),
+           position = "dodge2") +
+  ylab("# rented bikes")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
