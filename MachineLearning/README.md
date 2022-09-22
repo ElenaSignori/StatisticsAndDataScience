@@ -5,9 +5,7 @@ We chose a data set about the bike sharing service in Seoul, you can find it her
 In this folder there are several other folders which contains:
 
 • DATA: contains all the different data set versions created: the original dataset, the training set, the validation set, the test set and all the dummy versions.
-
 • MODELS: contains all the estimated models and also grid-search and cross-validation results.
-
 • UTILS: contains some useful codes.
 
 There are also some files:
