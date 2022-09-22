@@ -1,0 +1,11 @@
+cross_val_score,scoring,cv,model
+151.6147680690065,rmse,10,bike_GBM1_tuned_reg
+146.5615094151418,rmse,10,bike_GBM1_tuned_reg
+162.12701536238444,rmse,10,bike_GBM1_tuned_reg
+160.58257761129335,rmse,10,bike_GBM1_tuned_reg
+134.68349727041291,rmse,10,bike_GBM1_tuned_reg
+147.7453555889261,rmse,10,bike_GBM1_tuned_reg
+168.93239267633368,rmse,10,bike_GBM1_tuned_reg
+161.78865220797817,rmse,10,bike_GBM1_tuned_reg
+156.38398592638126,rmse,10,bike_GBM1_tuned_reg
+150.07774696977273,rmse,10,bike_GBM1_tuned_reg
