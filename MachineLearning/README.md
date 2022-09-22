@@ -8,6 +8,7 @@ In this folder there are several other folders which contains:
 * UTILS: contains some useful codes.
 
 There are also some files:
+* BikeSharing_report.pdf: final report (italian version).
 * bike_sharing_seoul_v4.Rproj: Rstudio project file.
 * EDA_nb.Rmd: notebook with exploratory data analysis.
 * EDA_nb.pdf: same notebook as above in pdf format.
